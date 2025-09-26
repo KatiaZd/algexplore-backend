@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
-import helmet from 'helmet'; // Pour la sécurité des en-têtes HTTP
-import rateLimit from 'express-rate-limit'; // Pour limiter le nombre de requêtes 
+import helmet from 'helmet'; // Sécurité des en-têtes HTTP
+import rateLimit from 'express-rate-limit'; // Limiter le nombre de requêtes
 import pinoHttp from 'pino-http';
 import cookieParser from 'cookie-parser';
 import { ENV } from './config/env';
@@ -9,20 +9,31 @@ import { ENV } from './config/env';
 const app = express();
 
 // Sécurité & middlewares
+app.disable('x-powered-by'); // Cache le fait qu’on utilise Express
 app.use(helmet());
+
+// CORS : vérifie les origines autorisées définies dans ENV
 app.use(
   cors({
-    origin: ENV.CORS_ORIGIN, //"http://localhost:4200"
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true); // Autorise les outils sans origin (ex: curl, Postman)
+      if (ENV.CORS_ORIGIN_LIST.includes(origin)) return cb(null, true);
+      return cb(new Error('Origin not allowed by CORS'));
+    },
     credentials: true,
   })
 );
-app.use(express.json({ limit: '10kb' })); // Limite la taille du corps des requêtes pour éviter les attaques par déni de service
-app.use(cookieParser()); // Pour lire les cookies
+
+// Parsing et middlewares utiles
+app.use(express.json({ limit: '10kb' })); // Limite la taille des bodies
+app.use(cookieParser()); // Lecture des cookies
 app.use(pinoHttp());
+
+// Rate limiting basique (seront branchés sur ENV dans SEC-2)
 app.use(
   rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 min
-    max: 200,                  // 200 req / 15 min / IP
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 200,                 // 200 requêtes / 15 min / IP
     standardHeaders: true,
     legacyHeaders: false,
   })

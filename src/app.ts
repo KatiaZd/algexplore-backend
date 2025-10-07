@@ -5,6 +5,8 @@ import rateLimit from 'express-rate-limit'; // Limiter le nombre de requêtes
 import pinoHttp from 'pino-http';
 import cookieParser from 'cookie-parser';
 import { ENV } from './config/env';
+import { AppError } from './errors/AppError'; 
+import { errorHandler } from './middlewares/errorHandler'; 
 
 const app = express();
 
@@ -53,5 +55,24 @@ app.use(
 app.get('/health', (_req, res) => {
   res.status(200).json({ status: 'ok' });
 });
+
+// Route de test d’erreur volontaire
+// Cette route simule une erreur serveur inattendue (500) pour vérifier la gestion des erreurs (errorHandler).
+// fonctionne bien/
+// Quand on appelle /boom -> une erreur est lancée -> interceptée par errorHandler
+app.get('/boom', (_req, _res) => {
+  throw new Error('Boom');
+});
+
+// Middleware 404
+// Doit être le dernier middleware avant errorHandler
+// car il attrape les routes non gérées
+app.use((_req, _res, next) => next(AppError.notFound()));
+
+// Middleware global de gestion des erreurs
+// Il intercepte toutes les erreurs passées à next(err)
+// - Si cest une AppError (ex: NOT_FOUND, BAD_REQUEST), il renvoie le JSON prévu
+// - Sinon, il renvoie une erreur 500 générique pour ne pas exposer les détails internes
+app.use(errorHandler);
 
 export default app;

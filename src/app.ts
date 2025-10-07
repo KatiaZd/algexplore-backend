@@ -29,13 +29,23 @@ app.use(express.json({ limit: '10kb' })); // Limite la taille des bodies
 app.use(cookieParser()); // Lecture des cookies
 app.use(pinoHttp());
 
-// Rate limiting basique (seront branchés sur ENV dans SEC-2)
+// Rate limiting configuré via ENV
 app.use(
   rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 200,                 // 200 requêtes / 15 min / IP
+    windowMs: ENV.RATE_WINDOW_MIN * 60 * 1000, // Convertit minutes → millisecondes
+    max: ENV.RATE_MAX_REQ,                     // Nombre max de requêtes par IP
     standardHeaders: true,
     legacyHeaders: false,
+    handler: (_req, res) => {
+      res.status(429).json({
+        error: {
+          code: 'TOO_MANY_REQUESTS',
+          message: 'Trop de requêtes. Réessaie dans quelques minutes.',
+          windowMinutes: ENV.RATE_WINDOW_MIN,
+          limit: ENV.RATE_MAX_REQ,
+        },
+      });
+    },
   })
 );
 

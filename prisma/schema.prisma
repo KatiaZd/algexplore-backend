@@ -2,68 +2,118 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
 generator client {
   provider = "prisma-client-js"
 }
 
-model User {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  name      String?
-  createdAt DateTime @default(now())
-  Avis      Avis[]
-  Favori    Favori[]
+model Utilisateur {
+  id              Int       @id @default(autoincrement()) @map("id_utilisateur")
+  nom             String    @map("nom_utilisateur") @db.VarChar(50)
+  prenom          String    @db.VarChar(50)
+  email           String    @unique @db.VarChar(100)
+  motDePasse      String    @map("mot_de_passe") @db.VarChar(255)
+  dateInscription DateTime? @map("date_inscription") @db.Date
+  role            String    @db.VarChar(20) // CHECK (admin|user) géré côté SQL
+  // relations
+  avis            Avis[]
+  favoris         Favori[]
+
+  @@map("utilisateur")
+}
+
+model Quartier {
+  id    Int    @id @default(autoincrement()) @map("id_quartier")
+  nom   String @unique @map("nom_quartier") @db.VarChar(100)
+  // relations
+  lieux Lieu[]
+
+  @@map("quartier")
 }
 
 model Lieu {
-  id        Int        @id @default(autoincrement())
-  nom       String
-  description String?
-  adresse   String?
-  createdAt DateTime   @default(now())
-  Photos    Photo[]
-  Avis      Avis[]
-  Favoris   Favori[]
-  Categories LieuCategorie[]
+  id           Int             @id @default(autoincrement()) @map("id_lieu")
+  nom          String          @map("nom_lieu") @db.VarChar(250)
+  description  String          @map("description_lieu") @db.Text
+  adresse      String          @db.VarChar(255)
+  dateCreation DateTime        @map("date_creation") @db.Date
+  dateDebut    DateTime?       @map("date_debut") @db.Date
+  dateFin      DateTime?       @map("date_fin") @db.Date
+  prixAdulte   String?         @map("prix_adulte") @db.VarChar(50)
+  prixEnfant   String?         @map("prix_enfant") @db.VarChar(50)
+  latitude     Decimal?        @db.Decimal(10, 8)
+  longitude    Decimal?        @db.Decimal(11, 8)
+  publicCible  String?         @map("public_cible") @db.VarChar(100)
+  urlInfos     String?         @map("url_infos") @db.VarChar(255)
+  infosAcces   String?         @map("infos_acces") @db.Text
+  quartierId   Int             @map("id_quartier")
+  // relations
+  quartier     Quartier        @relation(fields: [quartierId], references: [id])
+  categories   LieuCategorie[]
+  photos       Photo[]
+  avis         Avis[]
+  favoris      Favori[]
+
+  @@index([quartierId])
+  @@map("lieu")
 }
 
 model Categorie {
-  id    Int             @id @default(autoincrement())
-  label String          @unique
-  Lieux LieuCategorie[]
+  id    Int             @id @default(autoincrement()) @map("id_categorie")
+  nom   String          @unique @map("nom_categorie") @db.VarChar(100)
+  // relations
+  lieux LieuCategorie[]
+
+  @@map("categorie")
 }
 
 model LieuCategorie {
-  lieuId      Int
-  categorieId Int
-  Lieu        Lieu      @relation(fields: [lieuId], references: [id])
-  Categorie   Categorie @relation(fields: [categorieId], references: [id])
+  lieuId      Int @map("id_lieu")
+  categorieId Int @map("id_categorie")
+
+  lieu      Lieu      @relation(fields: [lieuId], references: [id])
+  categorie Categorie @relation(fields: [categorieId], references: [id])
+
   @@id([lieuId, categorieId])
+  @@index([categorieId])
+  @@map("lieu_categorie")
 }
 
 model Photo {
-  id     Int   @id @default(autoincrement())
-  url    String
-  alt    String?
-  lieuId Int
-  Lieu   Lieu  @relation(fields: [lieuId], references: [id])
+  id          Int     @id @default(autoincrement()) @map("id_photo")
+  url         String  @map("url_photo") @db.VarChar(255)
+  description String? @map("description_photo") @db.Text
+  lieuId      Int     @map("id_lieu")
+
+  lieu Lieu @relation(fields: [lieuId], references: [id])
+
+  @@index([lieuId])
+  @@map("photo")
 }
 
 model Avis {
-  id        Int      @id @default(autoincrement())
-  contenu   String
-  note      Int
-  userId    Int
-  lieuId    Int
-  createdAt DateTime @default(now())
-  User      User     @relation(fields: [userId], references: [id])
-  Lieu      Lieu     @relation(fields: [lieuId], references: [id])
+  id            Int     @id @default(autoincrement()) @map("id_avis")
+  note          Int
+  commentaire   String? @db.Text
+  utilisateurId Int     @map("id_utilisateur")
+  lieuId        Int     @map("id_lieu")
+
+  utilisateur Utilisateur @relation(fields: [utilisateurId], references: [id])
+  lieu        Lieu        @relation(fields: [lieuId], references: [id])
+
+  @@index([utilisateurId])
+  @@index([lieuId])
+  @@map("avis")
 }
 
 model Favori {
-  userId Int
-  lieuId Int
-  User   User @relation(fields: [userId], references: [id])
-  Lieu   Lieu @relation(fields: [lieuId], references: [id])
-  @@id([userId, lieuId])
+  utilisateurId Int @map("id_utilisateur")
+  lieuId        Int @map("id_lieu")
+
+  utilisateur Utilisateur @relation(fields: [utilisateurId], references: [id])
+  lieu        Lieu        @relation(fields: [lieuId], references: [id])
+
+  @@id([utilisateurId, lieuId])
+  @@index([lieuId])
+  @@map("favori")
 }

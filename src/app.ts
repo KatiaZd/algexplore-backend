@@ -7,8 +7,13 @@ import cookieParser from 'cookie-parser';
 import { ENV } from './config/env';
 import { AppError } from './errors/AppError'; 
 import { errorHandler } from './middlewares/errorHandler'; 
+import lieuxRouter from './routes/lieux.routes';
 
 const app = express();
+
+
+app.use(express.json()); // pour lire le body JSON
+app.use('/lieux', lieuxRouter); 
 
 // Sécurité & middlewares
 app.disable('x-powered-by'); // Cache le fait qu’on utilise Express

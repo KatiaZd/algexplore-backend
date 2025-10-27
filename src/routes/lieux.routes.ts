@@ -2,11 +2,138 @@ import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { validate } from '../middlewares/validate';
 import { LieuCreateSchema } from '../validation/lieu.schema';
+import { LieuUpdateSchema } from '../validation/lieuUpdate.schema';
 
 const prisma = new PrismaClient();
 const router = Router();
 
-// GET /lieux
+/**
+ * PUT /lieux/:id
+ * Objectif : modifier un lieu existant
+ * Règles :
+ *   - si le lieu n'existe pas -> 404
+ *   - si quartierNom est fourni -> on l'upsert et on relie le lieu
+ *   - si categories est fourni -> on remplace toutes les catégories du lieu
+ */
+router.put('/:id', validate(LieuUpdateSchema), async (req: Request, res: Response) => {
+  try {
+    // 1. Récupérer / valider l'id du lieu
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) {
+      return res.status(400).json({ error: 'id invalide' });
+    }
+
+    // 2. Vérifier que le lieu existe
+    const existing = await prisma.lieu.findUnique({ where: { id } });
+    if (!existing) {
+      return res.status(404).json({ error: 'Lieu introuvable' });
+    }
+
+    // 3. Extraire les champs envoyés par le client
+    const {
+      quartierNom,
+      categories,
+      dateCreation,
+      dateDebut,
+      dateFin,
+      latitude,
+      longitude,
+      ...rest // le reste : nom, description, adresse, etc.
+    } = req.body;
+
+    // 4. Préparer les données de mise à jour
+    //    On ne veut pas écraser avec undefined,
+    //    donc on ne met que ce qui est fourni.
+    const dataToUpdate: any = {
+      ...rest,
+    };
+
+    // Dates
+    if (dateCreation !== undefined) {
+      dataToUpdate.dateCreation = dateCreation ? new Date(dateCreation) : null;
+    }
+    if (dateDebut !== undefined) {
+      dataToUpdate.dateDebut = dateDebut ? new Date(dateDebut) : null;
+    }
+    if (dateFin !== undefined) {
+      dataToUpdate.dateFin = dateFin ? new Date(dateFin) : null;
+    }
+
+    // Coordonnées
+    if (latitude !== undefined) {
+      dataToUpdate.latitude = latitude ?? null;
+    }
+    if (longitude !== undefined) {
+      dataToUpdate.longitude = longitude ?? null;
+    }
+
+    // Quartier
+    if (quartierNom !== undefined) {
+      const quartier = await prisma.quartier.upsert({
+        where: { nom: quartierNom },
+        update: {},
+        create: { nom: quartierNom },
+      });
+      dataToUpdate.quartier = { connect: { id: quartier.id } };
+    }
+
+    // 5. Mettre à jour le lieu lui-même
+    await prisma.lieu.update({
+      where: { id },
+      data: dataToUpdate,
+    });
+
+    // 6. Mettre à jour les catégories si on en a reçu
+    if (categories !== undefined) {
+      // On supprime d'abord toutes les associations existantes
+      await prisma.lieuCategorie.deleteMany({
+        where: { lieuId: id },
+      });
+
+      // Puis on recrée à partir du nouveau tableau
+      for (const nomCat of categories) {
+        const cat = await prisma.categorie.upsert({
+          where: { nom: nomCat },
+          update: {},
+          create: { nom: nomCat },
+        });
+
+        await prisma.lieuCategorie.create({
+          data: {
+            lieuId: id,
+            categorieId: cat.id,
+          },
+        });
+      }
+    }
+
+    // 7. Renvoyer le lieu mis à jour, version complète
+    const full = await prisma.lieu.findUnique({
+      where: { id },
+      include: {
+        quartier: true,
+        categories: { include: { categorie: true } },
+        photos: true,
+      },
+    });
+
+    res.json(full);
+  } catch (err) {
+    console.error('PUT /lieux/:id error', err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+
+/**
+ * GET /lieux
+ * Query params possibles :
+ *   - page (par défaut 1)
+ *   - pageSize (par défaut 10, max 50)
+ *   - q (recherche texte dans nom / description / adresse)
+ *   - quartier (nom du quartier exact)
+ *   - categorie (nom de catégorie exact)
+ */
 router.get('/', async (req: Request, res: Response) => {
   try {
     // 1. Récupérer / normaliser les paramètres de requête

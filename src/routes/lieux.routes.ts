@@ -7,6 +7,67 @@ import { LieuUpdateSchema } from '../validation/lieuUpdate.schema';
 const prisma = new PrismaClient();
 const router = Router();
 
+
+/**
+ * DELETE /lieux/:id
+ * Suppression d'un lieu (admin)
+ * Règles :
+ *   - si le lieu n'existe pas -> 404
+ *   - supprimer les relations dépendantes (lieu_categorie, avis, favoris, photos)
+ *   - puis supprimer le lieu
+ */
+router.delete('/:id', async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) {
+      return res.status(400).json({ error: 'id invalide' });
+    }
+
+    // Vérifier que le lieu existe
+    const existing = await prisma.lieu.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Lieu introuvable' });
+    }
+
+    // On supprime dans un ordre logique :
+    // 1. avis
+    await prisma.avis.deleteMany({
+      where: { lieuId: id },
+    });
+
+    // 2. favoris
+    await prisma.favori.deleteMany({
+      where: { lieuId: id },
+    });
+
+    // 3. photos
+    await prisma.photo.deleteMany({
+      where: { lieuId: id },
+    });
+
+    // 4. relation lieu_categorie
+    await prisma.lieuCategorie.deleteMany({
+      where: { lieuId: id },
+    });
+
+    // 5. supprimer le lieu lui-même
+    await prisma.lieu.delete({
+      where: { id },
+    });
+
+    // 204 = No Content (réponse vide mais succès)
+    res.status(204).send();
+  } catch (err) {
+    console.error('DELETE /lieux/:id error', err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+
 /**
  * PUT /lieux/:id
  * Objectif : modifier un lieu existant

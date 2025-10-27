@@ -6,6 +6,130 @@ import { LieuCreateSchema } from '../validation/lieu.schema';
 const prisma = new PrismaClient();
 const router = Router();
 
+// GET /lieux
+router.get('/', async (req: Request, res: Response) => {
+  try {
+    // 1. Récupérer / normaliser les paramètres de requête
+    const page = Math.max(parseInt(String(req.query.page ?? '1'), 10), 1);
+    const pageSizeRaw = Math.max(parseInt(String(req.query.pageSize ?? '10'), 10), 1);
+    const pageSize = Math.min(pageSizeRaw, 50); // sécurité: pas plus de 50
+
+    const q = (req.query.q as string | undefined)?.trim();
+    const quartier = (req.query.quartier as string | undefined)?.trim();
+    const categorie = (req.query.categorie as string | undefined)?.trim();
+
+    // 2. Construire dynamiquement le "where" Prisma
+    const where: any = {};
+
+    if (q) {
+      // recherche texte approximative
+      where.OR = [
+        { nom: { contains: q, mode: 'insensitive' } },
+        { description: { contains: q, mode: 'insensitive' } },
+        { adresse: { contains: q, mode: 'insensitive' } },
+      ];
+    }
+
+    if (quartier) {
+      where.quartier = {
+        nom: { equals: quartier },
+      };
+    }
+
+    if (categorie) {
+      // On filtre les lieux qui ont AU MOINS une catégorie donnée
+      where.categories = {
+        some: {
+          categorie: {
+            nom: { equals: categorie },
+          },
+        },
+      };
+    }
+
+    // 3. Récupérer total + page de lieux en parallèle
+    const [total, lieux] = await Promise.all([
+      prisma.lieu.count({ where }),
+      prisma.lieu.findMany({
+        where,
+        orderBy: { dateCreation: 'desc' }, // les plus récents d'abord
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: {
+          quartier: true,
+          photos: true,
+          categories: {
+            include: { categorie: true }, // pour avoir le nom de la catégorie
+          },
+          _count: {
+            select: {
+              avis: true,
+              favoris: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    // 4. Calculer la moyenne des notes pour chaque lieu en une seule requête groupée
+    const lieuIds = lieux.map(l => l.id);
+
+    const notes = lieuIds.length
+      ? await prisma.avis.groupBy({
+          by: ['lieuId'],
+          where: { lieuId: { in: lieuIds } },
+          _avg: { note: true },
+        })
+      : [];
+
+    // Map { lieuId -> moyenne }
+    const avgByLieuId = new Map<number, number>();
+    for (const n of notes) {
+      avgByLieuId.set(n.lieuId, n._avg.note ?? 0);
+    }
+
+    // 5. Mise en forme de la réponse côté API (important pour le front)
+    const items = lieux.map(l => ({
+      id: l.id,
+      nom: l.nom,
+      description: l.description,
+      adresse: l.adresse,
+      dateCreation: l.dateCreation,
+      prixAdulte: l.prixAdulte,
+      prixEnfant: l.prixEnfant,
+      latitude: l.latitude ? Number(l.latitude) : null,
+      longitude: l.longitude ? Number(l.longitude) : null,
+      publicCible: l.publicCible,
+      urlInfos: l.urlInfos,
+      infosAcces: l.infosAcces,
+      quartier: l.quartier?.nom, // on renvoie juste le nom du quartier
+      categories: l.categories.map(c => c.categorie.nom),
+      photos: l.photos.map(p => ({
+        id: p.id,
+        url: p.url,
+        description: p.description,
+      })),
+      stats: {
+        avisCount: l._count.avis,
+        favorisCount: l._count.favoris,
+        avgNote: avgByLieuId.get(l.id) ?? 0,
+      },
+    }));
+
+    // 6. Réponse finale
+    res.json({
+      page,
+      pageSize,
+      total,
+      items,
+    });
+  } catch (err) {
+    console.error('GET /lieux error', err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// POST /lieux
 router.post('/', validate(LieuCreateSchema), async (req: Request, res: Response) => {
   try {
     const {

@@ -11,19 +11,30 @@ import lieuxRouter from './routes/lieux.routes';
 
 const app = express();
 
-
-app.use(express.json()); // pour lire le body JSON
-app.use('/lieux', lieuxRouter); 
+/*
+Ordre des middlewares:
+helmet() → d'abord
+cors() → juste après
+parsing (express.json, cookieParser)
+logs (pinoHttp)
+rate limiting
+/health
+routes métiers (/lieux)
+/boom
+404
+errorHandler
+*/ 
 
 // Sécurité & middlewares
 app.disable('x-powered-by'); // Cache le fait qu’on utilise Express
 app.use(helmet());
 
-// CORS : vérifie les origines autorisées définies dans ENV
+// CORS : autorise le front Angular si son origine est dans la liste blanche
 app.use(
   cors({
     origin: (origin, cb) => {
-      if (!origin) return cb(null, true); // Autorise les outils sans origin (ex: curl, Postman)
+      // Autorise Postman/curl (sans origin) et les origines autorisées
+      if (!origin) return cb(null, true); 
       if (ENV.CORS_ORIGIN_LIST.includes(origin)) return cb(null, true);
       return cb(new Error('Origin not allowed by CORS'));
     },
@@ -32,9 +43,9 @@ app.use(
 );
 
 // Parsing et middlewares utiles
-app.use(express.json({ limit: '10kb' })); // Limite la taille des bodies
+app.use(express.json({ limit: '10kb' })); // Lecture du Json + limite de taille
 app.use(cookieParser()); // Lecture des cookies
-app.use(pinoHttp());
+app.use(pinoHttp());  // Logs des requêtes HTTP
 
 // Rate limiting configuré via ENV
 app.use(
@@ -60,6 +71,10 @@ app.use(
 app.get('/health', (_req, res) => {
   res.status(200).json({ status: 'ok' });
 });
+
+// Routes métiers
+// app.use(express.json()); // pour lire le body JSON
+app.use('/lieux', lieuxRouter); 
 
 // Route de test d’erreur volontaire
 // Cette route simule une erreur serveur inattendue (500) pour vérifier la gestion des erreurs (errorHandler).

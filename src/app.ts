@@ -1,3 +1,4 @@
+import path from 'path';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet'; // Sécurité des en-têtes HTTP
@@ -65,6 +66,12 @@ app.use(
       });
     },
   })
+);
+
+// Fichiers statiques (img)
+app.use(
+  '/uploads',
+  express.static(path.resolve(process.cwd(), 'public', 'uploads'))
 );
 
 // Healthcheck minimal (liveness)
